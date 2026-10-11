@@ -1,0 +1,156 @@
+// File: integration-cpi/mappings/adapter_supplier_xml_to_json.json
+{
+  "MappingName": "ADAPTER_SUPPLIER_XML_TO_JSON",
+  "Description": "Legacy Adapter: Converts raw XML payloads from Supplier Portals into the standardized OData JSON format consumed by S/4HANA.",
+  
+  "SourceConfiguration": {
+    "FormatType": "XML_Schema_Defined",
+    "RootElementName": "/StockUpdateRequest"
+  },
+
+  "TargetConfiguration": {
+    "FormatType": "JSON_Standardized_OData_V2",
+    "EntitySetReference": "/SCAT2/MARD-QUANTITY_IN_STOCK/$entity"
+  },
+
+  // --- Mapping Rules: Field-by-field Transformation Logic ---
+  "MappingRules": [
+    {
+      "RuleId": "{RULE-MATERIAL-ID}",
+      "SourcePathExpression": "$.MaterialID", 
+      "TargetFieldName": "/MARA/MATNR/@value",
+      "TransformationType": "STRING_TO_ALPHANUMERIC", // Validates and cleans material number format
+      "ValidationConstraint": {
+        "MaxLength": 40,
+        "AllowedCharsPattern": "[A-Z0-9._%-]+" 
+      }
+    },
+    {
+      "RuleId": "{RULE-QTY-STOCK}",
+      "SourcePathExpression": "$.QuantityInStock", 
+      "TargetFieldName": "/SCAT2/MARD/QUANTITY_IN_STOCK/@value",
+      "TransformationType": "NUMBER_PARSE_DECIMAL(2)", // Rounds to 2 decimal places per S/4HANA standard
+      "DefaultOnNullValue": 0 
+    },
+    {
+      "RuleId": "{RULE-BATCH-ID}",
+      "SourcePathExpression": "$.BatchNo", 
+      "TargetFieldName": "/SCAT2/MARD/BATCH/@value"
+    }
+  ],
+
+  // --- Complex Logic: Conditional Mapping (If-Then) ---
+  "ConditionalMappings": [
+    {
+      "ConditionLogic": "@$.StockMovementType == 'REVERSAL'", 
+      "ActionOnTrue": {
+        "SetTargetField": "/SCAT2/MARD/STOCK_MOVEMENT_TYPE/@value",
+        "ValueConstant": "-10" // Negative stock movement for reversals
+      },
+      "ActionOnFalse": null
+    }
+  ]
+}
+
+// File: integration-cpi/mappings/enrichment_master_data_join.json
+{
+  "MappingName": "ENRICHMENT_JOIN_MASTER_DATA",
+  "Description": "Enriches incoming stock updates with Supplier Master Data and Plant Information before processing.",
+  
+  // --- Source A: Incoming Stock Request (JSON) ---
+  "SourceNodeA": {
+    "Type": "PayloadStream", 
+    "KeyPathExpression": "$.MaterialID" // Primary Key for Join
+  },
+
+  // --- Destination B: Enriched Entity Object ---
+  "DestinationNodeB": "/SCAT2/MARD-ENRICHED_STOCK_ENTITY/$entity", 
+
+  // --- Mapping Logic: The 'Join' Operation (Simulated in Flow) ---
+  "MappingRules": [
+    {
+      "RuleId": "{RULE-MARA-JOIN}", 
+      "SourcePathExpression_A": "$.MaterialID", // From Incoming Payload A
+      
+      // This implies a Join to SAP Table MARA via OData Service 'SAPABAP_CDS_SRV' or similar internal service
+      "JoinOperationConfiguration": {
+        "InternalServiceId": "{SERVICE_ID_MARA_READ}", 
+        "FilterExpression": "/MARA/MATNR eq $SourcePath_A" // Inner Join Logic
+      },
+
+      "TargetFieldName_B": "/EnrichedData/Plant/@value",
+      "TransformationLogic": "SELECT_FIELD_FROM_JOIN_RESULT('STPFL')"
+    }
+  ]
+}
+
+// File: integration-cpi/mappings/sanitizer_payload_security.json
+{
+  "MappingName": "SANITIZER_PAYLOAD_SECURITY",
+  "Description": "Applies security policies to outgoing payloads. Masks PII and removes internal cost centers from external views.",
+  
+  // --- Input: Raw Enriched Payload ---
+  "SourceConfiguration": {
+    "Type": "StreamTransformer" 
+  },
+
+  // --- Rules for Data Minimization & Security (GDPR/Compliance) ---
+  "SecurityTransformationRules": [
+    {
+      "RuleId": "{RULE-REDACT-COST}",
+      "Action": "REMOVE_FIELD", 
+      "SourcePathExpression": "$.InternalCostCenter" // Never send internal cost centers to suppliers
+    },
+    {
+      "RuleId": "{RULE-HASH-ID}",
+      "Action": "REPLACE_WITH_HASH", 
+      "TargetFieldName_B": "/EnrichedData/PartnerID/@value", 
+      "HashAlgorithm": "SHA256_SALTED" // Anonymize partner ID in external logs only if required, or mask it here
+    }
+  ]
+}
+
+// File: integration-cpi/mappings/alert_notification_template.json
+{
+  "MappingName": "ALERT_NOTIFICATION_TEMPLATE",
+  "Description": "Transforms internal low-stock events into the specific JSON schema expected by the Supplier Portal Notification Service.",
+  
+  // --- Source: Internal Event Stream (from Outbound Alert Flow) ---
+  "SourceConfiguration": {
+    "Type": "EventStream", 
+    "PayloadStructureReference": "/SCAT2/MARD_LOW_STOCK_EVENT"
+  },
+
+  // --- Mapping to External Supplier API Contract ---
+  "TargetConfiguration": {
+    "ExternalServiceId": "{SUPPLIER_PORTAL_API_ID}", 
+    "ContractDefinitionPath": "/contracts/supplier_alert_v1.json" // Reference to external API Swagger/OpenAPI contract
+  },
+
+  "MappingRules": [
+    {
+      "RuleId": "{RULE-HEADER-TYPE}",
+      "SourceField": "$.EventCategory", 
+      "TargetFieldName_B": "/AlertHeader/MessageType/@value",
+      "ValueConstant": "STOCK_ALERT" // Normalizes internal category to external message type
+    },
+    {
+      "RuleId": "{RULE-DETAILS-MAP}",
+      "SourceFieldArray": "$.LowStockDetails[*]", 
+      "TargetFieldName_B": "/AlertBody/Item",
+      "TransformationLogic": [
+        // Map Internal S/4HANA fields to External API Fields defined in the Contract Definition
+        {
+          "MapSourcePath": "@Value/MARA_MATNR",
+          "MapToDestinationField": "./MaterialNumber"
+        },
+        {
+          "MapSourcePath": "@Value/BATCH_BATCH_NUMBER", 
+          "MapToDestinationField": "./BatchID" // If batch management is active in external view
+        }
+      ]
+    }
+  ],
+
+  "// --- Note for Developers: This mapping must be tested against the Supplier Portal API Sandbox to ensure contract compliance. ///"
+}

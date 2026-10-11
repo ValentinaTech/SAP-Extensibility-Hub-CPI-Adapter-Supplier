@@ -1,0 +1,40 @@
+{
+  "FlowName": "Z_SUPPLIER_STOCK_UPDATE_FLOW",
+  "Description": "Ingests raw stock data from Supplier Portal (XML) and maps to internal Z_INVENTORY_STATUS CDS.",
+  
+  // --- Core Transformation Logic: The XPath Mappings ---
+  "MappingConfigurations": {
+    "NodeName": "ExtractSupplierData",
+    "NodeType": "XPATH_EXTRACTOR",
+    
+    // CORE LOGIC: Extracting only relevant stock items from a massive XML payload
+    "InputSelector": "//StockUpdateRequest/Item[!isEmpty(QuantityInStock)]", 
+    
+    "Mappings": [
+      {
+        "SourcePath": "$.MaterialID", 
+        "TargetField": "MARA-MATNR", 
+        "TransformationRule": "StringToAlphanumeric" // Ensures no special chars in material numbers
+      },
+      
+      {
+        "SourcePath": "$.QuantityInStock", 
+        "TargetField": "/SCAT2/MARD-QUANTITY_IN_STOCK", 
+        "TransformationRule": "NumberParseAsDecimal(2)"
+      }
+
+    ],
+    
+    // --- Core Logic: Exception Handling (Routing) ---
+    "ExceptionHandler": {
+       "Condition": "@$.ErrorMessage != null AND @$.Code = '404'", 
+       "ActionRouteToErrorFlow" 
+    },
+    
+    "DefaultErrorHandler": {
+      "LogEventToAuditTable": true,
+      "SendNotificationEmail": false // Disabled by default for performance unless configured in config node
+    }
+  }
+
+}

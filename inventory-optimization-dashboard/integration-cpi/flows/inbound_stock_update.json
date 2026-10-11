@@ -1,0 +1,46 @@
+{
+  "FlowName": "Z_SUPPLIER_STOCK_UPDATE_FLOW",
+  "Description": "Ingests raw stock data from Supplier Portal (XML) and maps to internal Z_INVENTORY_STATUS CDS.",
+  "Version": "1.0",
+  "ContentFormatId": "{2e3b6c7d-8f9a-4e5f-b1c2-d3e4f5g6h7i8}", 
+  "_type": "MessageMappingFlow",
+  
+  // --- Core Transformation Logic: The XPath Mappings ---
+  "SourceSystem": {
+    "Type": "ExternalPartnerAPI",
+    "Format": "XML/JSON"
+  },
+  "TargetEntity": "/SCAT2/MARD-QUANTITY_IN_STOCK", 
+  "MappingConfigurations": [
+    {
+      "NodeName": "ExtractSupplierData",
+      "NodeType": "XPATH_EXTRACTOR",
+      "InputSelector": "//StockUpdateRequest/Item[!isEmpty(QuantityInStock)]"
+    },
+    {
+      "NodeId": "{UUID-1}", 
+      "SourcePath": "$.MaterialID",
+      "TargetField": "MARA-MATNR",
+      "TransformationRule": "StringToAlphanumeric // Ensures no special chars in material numbers"
+    },
+    {
+      "NodeId": "{UUID-2}",
+      "SourcePath": "$.QuantityInStock", 
+      "TargetField": "/SCAT2/MARD-QUANTITY_IN_STOCK", 
+      "TransformationRule": "NumberParseAsDecimal(2) // Normalizes decimal places"
+    }
+  ],
+
+  // --- Core Logic: Exception Handling (Routing & Resilience) ---
+  "ExceptionHandler": {
+    "Enabled": true,
+    "ConditionExpression": "@$.ErrorMessage != null AND @$.Code = '404'", 
+    "ActionRouteToErrorFlow": "/error-handling-flow.json" 
+  },
+  
+  "DefaultErrorHandler": {
+    "LogEventToAuditTable": true, // Critical for debugging in production
+    "NotificationEndpoint": "",   // Disabled by default for performance unless configured
+    "MaxRetryAttempts": 3         // Standard industry practice for transient failures
+  }
+}
