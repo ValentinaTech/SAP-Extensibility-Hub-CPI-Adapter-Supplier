@@ -18,32 +18,42 @@ Der Dashboard löst abstrakte geschäftliche Herausforderungen durch Echtzeit-Ü
 
 ---
 
+Wir nutzen [Diskussionen](https://github.com/Logic-HQ/SAP-Extensibility-Hub-CPI-Adapter-Supplier-Fork/discussions/1) als Plattform.
+
 
 ## 🏗️ Architekturübersicht
 
 
 ```mermaid
 graph TD;
-    Client["<b>Fiori Elements App</b><br/>UI5 / Mobile Responsive"] --> |Consumes OData V4| API[S/4HANA Cloud];
+    Client["`**Fiori Elements App**
+UI5 / Mobile Responsive`"] --> |Consumes OData V4| API[S/4HANA Cloud];
     
     subgraph "Core Logic Layer"
-        CDS["CDS Views<br/><i>(Z_INVENTORY_STATUS)</i>"];
-        ABAP["ABAP OO Classes<br/><i>(Business Rules)</i><br/>initial-data-load.abap"];
+        CDS["`CDS Views
+*Z_INVENTORY_STATUS*`"];
+        ABAP["`ABAP OO Classes
+*Business Rules*
+initial-data-load.abap`"];
     end
     
     Client --> |Reads/Updates| CDS;
     
     subgraph "Integration Layer (SAP BTP)"
-        FlowInbound["Integration Flow:<br/>inbound_stock-update.json"];
-        Mapping["XML-to-JSON<br/><i>(Adapter Pattern)</i>"];
-        Outbound["Outbound Alert Flow:<br/>outbound_alert_flow.json"];
+        FlowInbound["`Integration Flow:
+inbound_stock-update.json`"];
+        Mapping["`XML-to-JSON
+*Adapter Pattern*`"];
+        Outbound["`Outbound Alert Flow:
+outbound_alert_flow.json`"];
     end
     
     Supplier["Supplier Portal API"] --> |Raw XML| Mapping;
     
     subgraph "DevOps & CI/CD"
-        Github["Github Actions<br/><b>(deploy-backend.yml)</b>"];
-        Audit["<i>Z_INTEGRATION_AUDIT_LOG</i>"];
+        Github["`Github Actions
+**deploy-backend.yml**`"];
+        Audit["`*Z_INTEGRATION_AUDIT_LOG*`"];
     end
     
     FlowInbound -.-> Supplier;
@@ -63,6 +73,23 @@ graph TD;
 
 ## 📂 Projektstruktur
 
+# Entwurf einer strukturierten Mapping-Konfiguration
+
+---
+
+## Kernlogik zur Integration: integration-cpi/flows/inbound_stock_update.json
+
+
+Dies ist eine simulierte Darstellung der Konfiguration einer Mapping-Knoten, die das Umwandeln eines externen XML-Datensatzes eines Lieferanten in interne HANA-Strukturen steuert.
+
+
+Ein Annotation-Knoten oder ein Mapping-Knotenzubehör existiert (z. B. stellt `@Vdm 'true'` sicher, dass Fiori Elements das Benutzeroberflächeninterface automatisch generieren kann).
+
+```ASCII
+Lieferanten-API -> [CPI-Mapping-Knoten] -> Z_INVENTORY_STATUS (CDS-Ansicht) -> Fiori-App
+            ↑                                    |           ↑
+        (Transformationlogik)               (Datenmodell)    (Visualisierungsschicht)
+```
 
 ## 🛠️ Installationsanleitung
 
