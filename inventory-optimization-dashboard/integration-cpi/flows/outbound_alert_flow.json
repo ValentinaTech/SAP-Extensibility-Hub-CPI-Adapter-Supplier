@@ -1,0 +1,73 @@
+{
+  "FlowName": "Z_LOW_STOCK_ALERT_FLOW",
+  "Description": "Detects low inventory levels in S/4HANA and triggers outbound notifications to the Supplier Portal via REST API.",
+  "Version": "1.0",
+  "_type": "IntegrationFlow",
+
+  // --- Trigger Definition (Polling or Event-Based) ---
+  "TriggerConfig": {
+    "Type": "TimerEvent",
+    "IntervalMinutes": 30, 
+    "ConditionExpression": "@MARD-STOCK <= @Z_INVENTORY_STATUS_MIN_THRESHOLD"
+  },
+
+  // --- Logic Node: Evaluation & Enrichment ---
+  "ProcessingSteps": [
+    {
+      "NodeId": "{STEP-ENRICH-META}",
+      "NodeName": "EnrichSupplierDetails",
+      "NodeType": "MapPayloadV2",
+      "ActionLogic": {
+        "InputSource": "/SCAT2/MARD-STOCK_LEVELS",
+        "OutputTargetFormat": "JSON",
+        "TransformationRules": [
+          {
+            "FieldPath": "$.SupplierID",
+            "Operation": "LookupExternalData",
+            "ExternalServiceReferenceId": "{SUPPLIER_MASTER_SERVICE_ID}", 
+            "KeyMappingSourcePath": "/MARA-SPARMAN-ID"
+          }
+        ]
+      }
+    },
+    {
+      "NodeId": "{STEP-BUILD-PAYLOAD}",
+      "NodeName": "ConstructAlertMessage",
+      "NodeType": "ScriptProcessorV2", 
+      // Simulating ABAP-like logic inside a JS/Java script for the integration suite
+      "CodeSnippetReference": "/scripts/build-low-stock-alert.js" 
+    }
+  ],
+
+  // --- Output Destination: Sending to Supplier Portal ---
+  "DestinationConfig": {
+    "NodeId": "{DEST-SUPPLIER-NOTIFY}",
+    "NodeName": "NotifySupplierPortal",
+    "NodeType": "HTTPDestinationsenderV2",
+    "Configuration": {
+      "URLScheme": "https", 
+      // Dynamic URL based on tenant configuration
+      "DynamicUrlTemplate": "/sap/opu/odata/IWB_PRT/SUPPLIER_PORTAL_SRV/{tenant_id}/$metadata#Suppliers('SupplierAlerts')/$entity" 
+    }
+  },
+
+  // --- Exception Handling: Downstream Failures (Critical for Resilience) ---
+  "ExceptionStrategy": {
+    "RetryPolicy": {
+      "Enabled": true,
+      "MaxAttempts": 2,
+      "BackoffIntervalMs": 5000 
+    },
+    "FailureAction": {
+      // If Supplier API is down or rejects the payload, create a ticket in SAP Service Desk automatically.
+      "CreateServiceRequestInSAPBusinessManager": true 
+    }
+  },
+
+  // --- Security & Audit: Ensuring compliance before sending sensitive alerts ---
+  "AuditTrail": {
+    "LogEventToTable": "/Z_INTEGRATION_AUDIT_LOG", 
+    "IncludePayloadHash": true, 
+    "ExcludeSensitiveFieldsFromLogs": [".PriceCost"]
+  }
+}

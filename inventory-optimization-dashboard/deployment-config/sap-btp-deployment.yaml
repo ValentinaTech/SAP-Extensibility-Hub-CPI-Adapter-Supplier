@@ -1,0 +1,18 @@
+apiVersion: cf.app/v1
+kind: Application
+metadata:
+  name: inventory-optimization-dashboard
+spec:
+  apps:
+    - app_name: frontend-fiori-service
+      buildpacks: [] # For custom Java/Node based BTP services, or use 'java-buildpack'/'nodejs-buildpack' depending on runtime
+      env:
+        SAP_CLIENT_SECRET_KEY_ID: "your-client-id"
+        SAP_AUTH_URL: "https://auth.eu10.hana.ondemand.com"
+        SERVICE_NAME_InventoryDataService: "/inventory-statuses/ODataService/1/v2" # Example OData service path
+      memory_limit_mb: 512
+
+    - app_name: backend-api-proxy
+      buildpacks:
+        - "nodejs_buildpack"
+      env: {}

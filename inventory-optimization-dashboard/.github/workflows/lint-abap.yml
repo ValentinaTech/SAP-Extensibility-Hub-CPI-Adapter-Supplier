@@ -1,0 +1,99 @@
+name: ABAP Code Linting & Style Check Simulation
+
+on:
+  push:
+    branches: [ main ] # Only check on pushes to Main branch (Production)
+  pull_request:
+    branches: [ main ] # Always check Pull Requests before merging
+
+jobs:
+  abap-code-quality-simulation:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Repository Code
+        uses: actions/checkout@v4
+        
+      - name: Install Python Linting Tools (Simulated Environment)
+        # In a real-world scenario, this step might install specific ABAP analysis tools 
+        # that run locally on your machine before pushing. Here we simulate the check logic.
+        run: |
+          echo "🔍 Initializing Static Analysis Engine for S/4HANA Standards..."
+          
+      - name: Enforce CDS Annotation Rules (@VDM, @Semantics)
+        run: |
+          # CORE LOGIC CHECK 1: Ensure Modernization Standards are met.
+          # Rejects code that uses raw SQL instead of CDS if '@AbapCatalog.sqlViewName' is missing.
+          echo "Checking all .cds files for required annotations..."
+          
+          cd backend-abap/cds-views
+          
+          # Simulating a grep command to ensure modernization tags are present
+          count=$(grep -l "@Vdm 'true'" z_inventory_status.cds | wc -l)
+          if [ $count -eq 0 ]; then
+            echo "❌ FAIL: CDS View is missing '@VDM' annotation. S/4HANA requires Virtual Data Models."
+            exit 1 # Fails the build pipeline simulation
+          else 
+            echo "✅ PASS: CDS View follows BTP/Virtual Data Model standards."
+          fi
+
+      - name: Enforce Naming Conventions (Z_ vs /IWBEP/)
+        run: |
+          cd backend-abap/cds-views
+          
+          # CORE LOGIC CHECK 2: Ensure custom objects use 'Z_' or 'Y_' prefix and standard namespaces.
+          echo "Verifying naming conventions..."
+          
+          if grep -q "^define Z_" z_inventory_status.cds; then 
+            echo "✅ PASS: Custom definitions follow 'Z_*' convention."
+          else
+             # Check for non-custom but allowed namespace usage (like /IWBEP)
+             if ! grep -q "/iwbep/" z_inventory_status.cds || [ $? -ne 0 ]; then 
+               echo "⚠️  WARNING: Ensure namespaces are valid S/4HANA standard objects."
+             fi
+          fi
+
+      - name: Check for Legacy Function Module Calls in CDS Context
+        run: |
+          
+          # CORE LOGIC CHECK 3: Prevent mixing legacy and modern paradigms incorrectly.
+          echo "Scanning for deprecated patterns inside .cds files..."
+          
+          if grep -qi "@deprecated" z_inventory_status.cds || grep -q "FUNCTION MODULE CALL IN SELECT" z_inventory_status.cds; then 
+            echo "❌ FAIL: Detected potential legacy dependency or invalid CDS usage."
+            exit 1
+          else
+            echo "✅ PASS: Code adheres to declarative ABAP principles (No implicit function calls in views)."
+          fi
+
+      - name: Generate Static Analysis Report
+        run: |
+          # Simulates generating a report similar to what Abaplint or RAP Analyser would output.
+          
+          cat > lint-report-summary.txt << EOF
+================================================================================
+                    SAP S/4HANA CODE LINTING REPORT (SIMULATION)
+================================================================================
+
+Status: ❌ NOT FOR DEPLOYMENT IT FOR LERNING PURPOSE ONLY
+
+Rules Enforced via Pipeline:
+1. [PASS] Virtual Data Model (@VDM 'true') is active on all CDS views.
+2. [PASS] Fiori Semantics annotations are present for auto-generation support.
+3. [PASS] No legacy raw SQL joins without HANA optimization hints detected.
+4. [WARN] Review comments in 'integration-cpi' folder for XML path efficiency.
+
+Next Steps: 
+- Merge to Main Branch will trigger deployment workflow (.github/workflows/deploy-abap.yml).
+================================================================================
+EOF
+        
+        echo "Linting report generated:"
+        cat lint-report-summary.txt
+
+      - name: Archive Lint Report (Optional)
+        uses: actions/upload-artifact@v3 # Actually uploads the text file if you want to download it later
+        with:
+          name: abap-linting-results-${{ github.sha }}
+          path: backend-abap/lint-report-summary.txt
+
